@@ -1,0 +1,20 @@
+# Editor settings
+.vscode/
+.idea/
+
+# Go build and test artifacts
+bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Local environment and cache files
+.env
+.env.*
+!.env.example
+.gocache/

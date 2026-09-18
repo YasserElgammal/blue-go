@@ -1,5 +1,7 @@
 # Blue
 
+[![CI](https://github.com/YasserElgammal/blue-go/actions/workflows/ci.yml/badge.svg)](https://github.com/YasserElgammal/blue-go/actions/workflows/ci.yml)
+
 Blue is a lightweight Go web framework for building REST APIs.
 
 It provides routing, route groups, request binding, response helpers, centralized error handling, pagination, graceful shutdown, and ready-to-use middleware for logging, panic recovery, CORS, and request IDs.

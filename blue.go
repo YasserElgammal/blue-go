@@ -18,11 +18,14 @@ type ErrorHandler = bluehttp.ErrorHandler
 type HTTPError = bluehttp.HTTPError
 type Pagination = page.Pagination
 type Group = router.Group
+type CORSConfig = standard.CORSConfig
 
 func New() *App { return app.New() }
 
-func Logger() Middleware  { return standard.Logger() }
-func Recover() Middleware { return standard.Recover() }
+func Logger() Middleware                   { return standard.Logger() }
+func Recover() Middleware                  { return standard.Recover() }
+func RequestID() Middleware                { return standard.RequestID() }
+func CORS(config ...CORSConfig) Middleware { return standard.CORS(config...) }
 
 func NewHTTPError(status int, message string) *HTTPError {
 	return bluehttp.NewHTTPError(status, message)

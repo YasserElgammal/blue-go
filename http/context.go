@@ -9,8 +9,9 @@ type Context struct {
 	Request  *stdhttp.Request
 	Response stdhttp.ResponseWriter
 
-	params map[string]string
-	state  *responseState
+	params    map[string]string
+	requestID string
+	state     *responseState
 }
 
 // NewContext constructs a context for an incoming request.
@@ -27,6 +28,14 @@ func (c *Context) Param(name string) string { return c.params[name] }
 
 // Query returns the first value for a query parameter.
 func (c *Context) Query(name string) string { return c.Request.URL.Query().Get(name) }
+
+// RequestID returns the identifier assigned to the current request, or an
+// empty string when request ID middleware is not installed.
+func (c *Context) RequestID() string { return c.requestID }
+
+// SetRequestID assigns an identifier to the current request. Applications
+// normally use RequestID middleware instead of calling this method directly.
+func (c *Context) SetRequestID(id string) { c.requestID = id }
 
 // Status returns the response status, or zero before the response is committed.
 func (c *Context) Status() int { return c.state.status }

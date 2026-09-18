@@ -1,12 +1,13 @@
 # Blue
 
-Blue is a small Go web framework for building REST APIs. It provides routing,
-request and response helpers, middleware, centralized errors, and pagination
-without choosing an application structure or database library for you.
+Blue is a lightweight Go web framework for building REST APIs.
 
-Blue favors explicit code, the Go standard library, and a small public API. It
-does not include an ORM, dependency injection container, authentication system,
-template engine, or code generator.
+It provides routing, route groups, request binding, response helpers, centralized error handling, pagination, graceful shutdown, and ready-to-use middleware for logging, panic recovery, CORS, and request IDs.
+
+Blue favors explicit code, the Go standard library, and a focused public API. It stays independent of application architecture and persistence choices, allowing you to use any database driver, ORM, validation library, or project structure.
+
+Authentication, dependency injection, templating, and code generation remain application-level choices rather than framework requirements.
+
 
 ## Package structure
 
@@ -27,6 +28,8 @@ blue-go/
 |-- middleware/
 |   |-- middleware.go         # middleware type alias
 |   |-- logger.go             # structured request logging
+|   |-- cors.go               # CORS headers and preflight requests
+|   |-- request_id.go         # request ID generation and propagation
 |   |-- recover.go            # panic recovery
 |   `-- middleware_test.go
 |-- http/
@@ -187,7 +190,72 @@ api.GET("/profile", profile)
 
 Middleware executes in the order passed to `Use`; its code after `next` runs in
 reverse order. Blue includes optional structured request logging via
-`log/slog` and panic recovery middleware.
+`log/slog`, request IDs, CORS, and panic recovery middleware.
+
+### Request IDs
+
+`RequestID` preserves a valid incoming `X-Request-ID` or generates a random
+one. The value is returned in the response header and is automatically added
+to records written by `Logger`:
+
+```go
+app.Use(blue.RequestID(), blue.Logger())
+
+app.GET("/request-id", func(c *blue.Context) error {
+    return c.JSON(http.StatusOK, map[string]string{
+        "request_id": c.RequestID(),
+    })
+})
+```
+
+### CORS
+
+`CORS` adds cross-origin response headers and handles valid browser preflight
+requests before routing:
+
+```go
+app.Use(blue.RequestID(), blue.CORS(blue.CORSConfig{
+    AllowedOrigins: []string{"https://example.com"},
+    AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
+    AllowedHeaders: []string{"Authorization", "Content-Type"},
+    ExposedHeaders: []string{"X-Request-ID"},
+    MaxAge:         600,
+}))
+```
+
+Calling `blue.CORS()` without a configuration allows all origins without
+credentials and uses the common REST methods and JSON request headers.
+Place `RequestID` before `CORS` when preflight responses should also receive a
+request ID.
+
+## Server lifecycle
+
+`Run` and `Start` both block while the server is running. `Shutdown` can be
+called from another goroutine to wait for active requests to finish:
+
+```go
+go func() {
+    if err := app.Start(":8080"); err != nil {
+        log.Printf("server stopped: %v", err)
+    }
+}()
+
+// Later, after receiving your application's shutdown signal:
+shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+if err := app.Shutdown(shutdownCtx); err != nil {
+    log.Printf("shutdown failed: %v", err)
+}
+```
+
+For the common case, `RunWithGracefulShutdown` handles `Ctrl+C` and `SIGTERM`
+and gives active requests up to ten seconds to complete:
+
+```go
+if err := app.RunWithGracefulShutdown(":8080"); err != nil {
+    panic(err)
+}
+```
 
 ## Responses
 

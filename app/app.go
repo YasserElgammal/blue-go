@@ -2,9 +2,17 @@
 package app
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	bluehttp "github.com/yasserelgammal/blue-go/http"
 	"github.com/yasserelgammal/blue-go/router"
@@ -17,6 +25,9 @@ type App struct {
 	mu           sync.RWMutex
 	middleware   []Middleware
 	errorHandler ErrorHandler
+
+	serverMu sync.Mutex
+	server   *http.Server
 }
 
 // New creates an empty application.
@@ -93,10 +104,95 @@ func (a *App) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	}
 }
 
-// Run starts an HTTP server at addr and blocks until it stops.
-func (a *App) Run(addr string) error {
+// Run starts an HTTP server at addr and blocks until it stops. It is an alias
+// for Start and returns nil after a graceful shutdown.
+func (a *App) Run(addr string) error { return a.Start(addr) }
+
+// Start starts an HTTP server at addr and blocks until it stops. Call Shutdown
+// from another goroutine to stop it gracefully.
+func (a *App) Start(addr string) error {
+	server, listener, err := a.prepareServer(addr)
+	if err != nil {
+		return err
+	}
+	return a.serve(server, listener)
+}
+
+func (a *App) prepareServer(addr string) (*http.Server, net.Listener, error) {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, nil, err
+	}
 	server := &http.Server{Addr: addr, Handler: a}
-	return server.ListenAndServe()
+	a.serverMu.Lock()
+	if a.server != nil {
+		a.serverMu.Unlock()
+		_ = listener.Close()
+		return nil, nil, fmt.Errorf("blue: server is already running")
+	}
+	a.server = server
+	a.serverMu.Unlock()
+	return server, listener, nil
+}
+
+func (a *App) serve(server *http.Server, listener net.Listener) error {
+	err := server.Serve(listener)
+	a.serverMu.Lock()
+	if a.server == server {
+		a.server = nil
+	}
+	a.serverMu.Unlock()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+// Shutdown gracefully stops the active server without interrupting active
+// connections. It is safe to call when no server is running.
+func (a *App) Shutdown(ctx context.Context) error {
+	a.serverMu.Lock()
+	server := a.server
+	a.serverMu.Unlock()
+	if server == nil {
+		return nil
+	}
+	return server.Shutdown(ctx)
+}
+
+// RunWithGracefulShutdown starts the server and handles Ctrl+C and SIGTERM.
+// Active requests receive up to ten seconds to finish.
+func (a *App) RunWithGracefulShutdown(addr string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		// Restore the default signal behavior so a second signal can force an
+		// immediate exit while graceful shutdown is in progress.
+		stop()
+	}()
+	return a.runUntil(ctx, addr, 10*time.Second)
+}
+
+func (a *App) runUntil(ctx context.Context, addr string, timeout time.Duration) error {
+	server, listener, err := a.prepareServer(addr)
+	if err != nil {
+		return err
+	}
+	serverResult := make(chan error, 1)
+	go func() { serverResult <- a.serve(server, listener) }()
+
+	select {
+	case err := <-serverResult:
+		return err
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := a.Shutdown(shutdownContext); err != nil {
+			return err
+		}
+		return <-serverResult
+	}
 }
 
 func applyMiddleware(handler HandlerFunc, middleware ...Middleware) HandlerFunc {

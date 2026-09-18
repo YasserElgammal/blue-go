@@ -28,6 +28,9 @@ func Logger() Middleware {
 				"status", status,
 				"duration", time.Since(started),
 			}
+			if requestID := c.RequestID(); requestID != "" {
+				attributes = append(attributes, "request_id", requestID)
+			}
 			if err != nil {
 				attributes = append(attributes, "error", err)
 			}

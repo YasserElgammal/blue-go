@@ -3,7 +3,7 @@ package middleware
 import (
 	stdhttp "net/http"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 // BodyLimit limits the number of request-body bytes a handler may read. It

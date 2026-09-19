@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 // HandlerFunc and Middleware mirror the framework HTTP primitives.

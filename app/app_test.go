@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/yasserelgammal/blue-go/app"
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	"github.com/yasserelgammal/blue-go/v2/app"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 func request(t *testing.T, handler http.Handler, method, target string) *httptest.ResponseRecorder {

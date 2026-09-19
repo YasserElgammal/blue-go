@@ -3,11 +3,11 @@
 package blue
 
 import (
-	"github.com/yasserelgammal/blue-go/app"
-	bluehttp "github.com/yasserelgammal/blue-go/http"
-	standard "github.com/yasserelgammal/blue-go/middleware"
-	page "github.com/yasserelgammal/blue-go/pagination"
-	"github.com/yasserelgammal/blue-go/router"
+	"github.com/yasserelgammal/blue-go/v2/app"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
+	standard "github.com/yasserelgammal/blue-go/v2/middleware"
+	page "github.com/yasserelgammal/blue-go/v2/pagination"
+	"github.com/yasserelgammal/blue-go/v2/router"
 )
 
 type App = app.App

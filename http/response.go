@@ -7,7 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
-	"github.com/yasserelgammal/blue-go/pagination"
+	"github.com/yasserelgammal/blue-go/v2/pagination"
 )
 
 // Response is the framework's unified representation of an API response.

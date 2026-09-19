@@ -6,7 +6,7 @@ import (
 	stdhttp "net/http"
 	"runtime/debug"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 // Recover converts panics into an internal server error. http.ErrAbortHandler

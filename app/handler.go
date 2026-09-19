@@ -1,6 +1,6 @@
 package app
 
-import bluehttp "github.com/yasserelgammal/blue-go/http"
+import bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 
 // HandlerFunc, Middleware, and ErrorHandler are aliases for Blue's HTTP
 // primitives. They live here as part of the application-facing API.

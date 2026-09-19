@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
-	"github.com/yasserelgammal/blue-go/pagination"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
+	"github.com/yasserelgammal/blue-go/v2/pagination"
 )
 
 func context(method, target string, body io.Reader) (*bluehttp.Context, *httptest.ResponseRecorder) {

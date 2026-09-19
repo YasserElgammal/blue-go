@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	blue "github.com/yasserelgammal/blue-go"
+	blue "github.com/yasserelgammal/blue-go/v2"
 )
 
 func TestPublicAPI(t *testing.T) {

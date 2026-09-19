@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
-	"github.com/yasserelgammal/blue-go/router"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
+	"github.com/yasserelgammal/blue-go/v2/router"
 )
 
 func taggedHandler(tag string) bluehttp.HandlerFunc {

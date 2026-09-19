@@ -68,7 +68,7 @@ chain.
 Blue requires Go 1.22 or newer.
 
 ```sh
-go get github.com/yasserelgammal/blue-go
+go get github.com/yasserelgammal/blue-go/v2
 ```
 
 ## Quick start
@@ -79,7 +79,7 @@ package main
 import (
     "net/http"
 
-    blue "github.com/yasserelgammal/blue-go"
+    blue "github.com/yasserelgammal/blue-go/v2"
 )
 
 func main() {

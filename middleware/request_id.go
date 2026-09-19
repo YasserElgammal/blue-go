@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 const requestIDHeader = "X-Request-ID"

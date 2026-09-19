@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/yasserelgammal/blue-go/pagination"
+	"github.com/yasserelgammal/blue-go/v2/pagination"
 )
 
 func TestMetadata(t *testing.T) {

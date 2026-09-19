@@ -5,7 +5,7 @@ import (
 	stdhttp "net/http"
 	"time"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 // Logger logs one structured record for each request using slog.Default().

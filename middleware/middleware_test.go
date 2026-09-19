@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
-	"github.com/yasserelgammal/blue-go/middleware"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
+	"github.com/yasserelgammal/blue-go/v2/middleware"
 )
 
 func TestRecoverConvertsPanicToHTTPError(t *testing.T) {

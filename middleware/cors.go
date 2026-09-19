@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	bluehttp "github.com/yasserelgammal/blue-go/http"
+	bluehttp "github.com/yasserelgammal/blue-go/v2/http"
 )
 
 // CORSConfig controls the cross-origin requests accepted by CORS middleware.

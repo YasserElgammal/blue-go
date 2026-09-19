@@ -87,6 +87,53 @@ func TestLoggerIncludesRequestID(t *testing.T) {
 	}
 }
 
+func TestBodyLimit(t *testing.T) {
+	t.Run("rejects known oversized body before handler", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("12345"))
+		context := bluehttp.NewContext(httptest.NewRecorder(), request, nil)
+		called := false
+		err := middleware.BodyLimit(4)(func(*bluehttp.Context) error {
+			called = true
+			return nil
+		})(context)
+		if called {
+			t.Fatal("oversized request reached handler")
+		}
+		if status := bluehttp.StatusForError(err); status != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d", status)
+		}
+	})
+
+	t.Run("limits body with unknown length", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"too long"}`))
+		request.ContentLength = -1
+		request.Header.Set("Content-Type", "application/json")
+		context := bluehttp.NewContext(httptest.NewRecorder(), request, nil)
+		err := middleware.BodyLimit(8)(func(c *bluehttp.Context) error {
+			var value struct {
+				Name string `json:"name"`
+			}
+			return c.BindJSON(&value)
+		})(context)
+		if status := bluehttp.StatusForError(err); status != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, error = %v", status, err)
+		}
+	})
+
+	t.Run("allows body within limit", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("1234"))
+		context := bluehttp.NewContext(httptest.NewRecorder(), request, nil)
+		called := false
+		err := middleware.BodyLimit(4)(func(*bluehttp.Context) error {
+			called = true
+			return nil
+		})(context)
+		if err != nil || !called {
+			t.Fatalf("called = %v, error = %v", called, err)
+		}
+	})
+}
+
 func TestCORS(t *testing.T) {
 	config := middleware.CORSConfig{
 		AllowedOrigins: []string{"https://example.com"},

@@ -16,6 +16,9 @@ import (
 func context(method, target string, body io.Reader) (*bluehttp.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, target, body)
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	return bluehttp.NewContext(recorder, request, nil), recorder
 }
 
@@ -98,6 +101,59 @@ func TestBindJSON(t *testing.T) {
 	if value.Name != "oak" {
 		t.Fatalf("name = %q", value.Name)
 	}
+}
+
+func TestBindJSONValidation(t *testing.T) {
+	type input struct {
+		Name string `json:"name"`
+	}
+
+	t.Run("requires JSON content type", func(t *testing.T) {
+		request := httptest.NewRequest(stdhttp.MethodPost, "/", bytes.NewBufferString(`{"name":"oak"}`))
+		c := bluehttp.NewContext(httptest.NewRecorder(), request, nil)
+		var value input
+		err := c.BindJSON(&value)
+		if status := bluehttp.StatusForError(err); status != stdhttp.StatusUnsupportedMediaType {
+			t.Fatalf("status = %d, want %d", status, stdhttp.StatusUnsupportedMediaType)
+		}
+	})
+
+	t.Run("accepts structured JSON suffix", func(t *testing.T) {
+		c, _ := context(stdhttp.MethodPost, "/", bytes.NewBufferString(`{"name":"oak"}`))
+		c.Request.Header.Set("Content-Type", "application/problem+json; charset=utf-8")
+		var value input
+		if err := c.BindJSON(&value); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("rejects unknown fields when configured", func(t *testing.T) {
+		c, _ := context(stdhttp.MethodPost, "/", bytes.NewBufferString(`{"name":"oak","secret":true}`))
+		c.SetJSONConfig(bluehttp.JSONConfig{
+			RequireContentType:    true,
+			DisallowUnknownFields: true,
+		})
+		var value input
+		err := c.BindJSON(&value)
+		if status := bluehttp.StatusForError(err); status != stdhttp.StatusBadRequest {
+			t.Fatalf("status = %d, want %d", status, stdhttp.StatusBadRequest)
+		}
+		if err == nil || err.Error() != "Request body contains an unknown field" {
+			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("returns safe syntax error", func(t *testing.T) {
+		c, _ := context(stdhttp.MethodPost, "/", bytes.NewBufferString(`{"name":`))
+		var value input
+		err := c.BindJSON(&value)
+		if err == nil || err.Error() != "Request body contains malformed JSON" {
+			t.Fatalf("error = %v", err)
+		}
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("error does not retain its cause: %v", err)
+		}
+	})
 }
 
 func TestPaginatedResponse(t *testing.T) {

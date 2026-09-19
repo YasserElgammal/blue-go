@@ -26,6 +26,8 @@ type App struct {
 	middleware   []Middleware
 	errorHandler ErrorHandler
 	formatter    bluehttp.ResponseFormatter
+	serverConfig ServerConfig
+	jsonConfig   bluehttp.JSONConfig
 
 	serverMu sync.Mutex
 	server   *http.Server
@@ -37,7 +39,26 @@ func New() *App {
 		router:       router.New(),
 		errorHandler: bluehttp.DefaultErrorHandler,
 		formatter:    bluehttp.DefaultResponseFormatter,
+		serverConfig: DefaultServerConfig(),
+		jsonConfig:   bluehttp.DefaultJSONConfig(),
 	}
+}
+
+// SetServerConfig configures the HTTP server created by Start and Run. Changes
+// take effect the next time the server starts.
+func (a *App) SetServerConfig(config ServerConfig) {
+	validateServerConfig(config)
+	a.mu.Lock()
+	a.serverConfig = config
+	a.mu.Unlock()
+}
+
+// SetJSONConfig configures JSON request binding for every request. Middleware
+// may override the configuration for one request with Context.SetJSONConfig.
+func (a *App) SetJSONConfig(config bluehttp.JSONConfig) {
+	a.mu.Lock()
+	a.jsonConfig = config
+	a.mu.Unlock()
 }
 
 // SetResponseFormatter customizes the JSON shape produced by Respond,
@@ -93,6 +114,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	applicationMiddleware := append([]Middleware(nil), a.middleware...)
 	errorHandler := a.errorHandler
 	formatter := a.formatter
+	jsonConfig := a.jsonConfig
 	a.mu.RUnlock()
 
 	matched, allowed := a.router.MatchRequest(request.Method, request.URL.Path)
@@ -102,6 +124,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	}
 	context := bluehttp.NewContext(w, request, params)
 	context.SetResponseFormatter(formatter)
+	context.SetJSONConfig(jsonConfig)
 
 	var handler HandlerFunc
 	middleware := applicationMiddleware
@@ -141,7 +164,18 @@ func (a *App) prepareServer(addr string) (*http.Server, net.Listener, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	server := &http.Server{Addr: addr, Handler: a}
+	a.mu.RLock()
+	config := a.serverConfig
+	a.mu.RUnlock()
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           a,
+		ReadHeaderTimeout: config.ReadHeaderTimeout,
+		ReadTimeout:       config.ReadTimeout,
+		WriteTimeout:      config.WriteTimeout,
+		IdleTimeout:       config.IdleTimeout,
+		MaxHeaderBytes:    config.MaxHeaderBytes,
+	}
 	a.serverMu.Lock()
 	if a.server != nil {
 		a.serverMu.Unlock()

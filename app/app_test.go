@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -135,6 +136,28 @@ func TestCustomResponseFormatter(t *testing.T) {
 	if failure.Code != http.StatusBadRequest || failure.Body.String() != "{\"ok\":false,\"problem\":\"Invalid request\"}\n" {
 		t.Fatalf("failure status %d body %q", failure.Code, failure.Body.String())
 	}
+}
+
+func TestJSONConfigAppliedToRequests(t *testing.T) {
+	application := app.New()
+	config := bluehttp.DefaultJSONConfig()
+	config.DisallowUnknownFields = true
+	application.SetJSONConfig(config)
+	application.POST("/users", func(c *bluehttp.Context) error {
+		var input struct {
+			Name string `json:"name"`
+		}
+		return c.BindJSON(&input)
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/users", bytes.NewBufferString(`{"name":"Blue","extra":true}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	application.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	assertErrorMessage(t, response, "Request body contains an unknown field")
 }
 
 func TestNotFound(t *testing.T) {

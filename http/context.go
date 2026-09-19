@@ -13,6 +13,7 @@ type Context struct {
 	requestID         string
 	state             *responseState
 	responseFormatter ResponseFormatter
+	jsonConfig        JSONConfig
 }
 
 // NewContext constructs a context for an incoming request.
@@ -27,6 +28,7 @@ func NewContext(w stdhttp.ResponseWriter, r *stdhttp.Request, params map[string]
 		params:            params,
 		state:             state,
 		responseFormatter: DefaultResponseFormatter,
+		jsonConfig:        DefaultJSONConfig(),
 	}
 }
 
@@ -58,3 +60,6 @@ func (c *Context) SetResponseFormatter(formatter ResponseFormatter) {
 	}
 	c.responseFormatter = formatter
 }
+
+// SetJSONConfig changes JSON binding behavior for this request.
+func (c *Context) SetJSONConfig(config JSONConfig) { c.jsonConfig = config }

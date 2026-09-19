@@ -25,6 +25,7 @@ type App struct {
 	mu           sync.RWMutex
 	middleware   []Middleware
 	errorHandler ErrorHandler
+	formatter    bluehttp.ResponseFormatter
 
 	serverMu sync.Mutex
 	server   *http.Server
@@ -32,7 +33,22 @@ type App struct {
 
 // New creates an empty application.
 func New() *App {
-	return &App{router: router.New(), errorHandler: bluehttp.DefaultErrorHandler}
+	return &App{
+		router:       router.New(),
+		errorHandler: bluehttp.DefaultErrorHandler,
+		formatter:    bluehttp.DefaultResponseFormatter,
+	}
+}
+
+// SetResponseFormatter customizes the JSON shape produced by Respond,
+// RespondWithMessage, Paginated, and the default error handler.
+func (a *App) SetResponseFormatter(formatter bluehttp.ResponseFormatter) {
+	if formatter == nil {
+		panic("blue: nil response formatter")
+	}
+	a.mu.Lock()
+	a.formatter = formatter
+	a.mu.Unlock()
 }
 
 // Use adds application middleware in execution order.
@@ -76,6 +92,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	a.mu.RLock()
 	applicationMiddleware := append([]Middleware(nil), a.middleware...)
 	errorHandler := a.errorHandler
+	formatter := a.formatter
 	a.mu.RUnlock()
 
 	matched, allowed := a.router.MatchRequest(request.Method, request.URL.Path)
@@ -84,6 +101,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		params = matched.Params
 	}
 	context := bluehttp.NewContext(w, request, params)
+	context.SetResponseFormatter(formatter)
 
 	var handler HandlerFunc
 	middleware := applicationMiddleware

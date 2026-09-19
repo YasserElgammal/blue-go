@@ -10,6 +10,30 @@ import (
 	"github.com/yasserelgammal/blue-go/pagination"
 )
 
+// Response is the framework's unified representation of an API response.
+// Status is available to custom formatters but is not included in the default
+// JSON body.
+type Response struct {
+	Status  int            `json:"-"`
+	Success bool           `json:"success"`
+	Message string         `json:"message,omitempty"`
+	Data    any            `json:"data,omitempty"`
+	Meta    any            `json:"meta,omitempty"`
+	Error   *ResponseError `json:"error,omitempty"`
+}
+
+// ResponseError contains safe error information returned to an API client.
+type ResponseError struct {
+	Message string `json:"message"`
+}
+
+// ResponseFormatter converts a unified Response into the value serialized as
+// JSON. It can be configured per application or per request.
+type ResponseFormatter func(Response) any
+
+// DefaultResponseFormatter returns Blue's standard response envelope.
+func DefaultResponseFormatter(response Response) any { return response }
+
 // JSON writes value as a JSON response.
 func (c *Context) JSON(status int, value any) error {
 	payload, err := json.Marshal(value)
@@ -21,6 +45,44 @@ func (c *Context) JSON(status int, value any) error {
 	c.Response.WriteHeader(status)
 	_, err = io.Copy(c.Response, bytes.NewReader(payload))
 	return err
+}
+
+// Respond writes a unified JSON response containing data.
+func (c *Context) Respond(status int, data any) error {
+	return c.writeResponse(Response{
+		Status:  status,
+		Success: status >= 200 && status < 400,
+		Data:    data,
+	})
+}
+
+// RespondWithMessage writes a unified JSON response containing a message and
+// optional data.
+func (c *Context) RespondWithMessage(status int, message string, data any) error {
+	return c.writeResponse(Response{
+		Status:  status,
+		Success: status >= 200 && status < 400,
+		Message: message,
+		Data:    data,
+	})
+}
+
+// Error writes a unified JSON error response. message must be safe to expose
+// to the client.
+func (c *Context) Error(status int, message string) error {
+	return c.writeResponse(Response{
+		Status:  status,
+		Success: false,
+		Error:   &ResponseError{Message: message},
+	})
+}
+
+func (c *Context) writeResponse(response Response) error {
+	formatter := c.responseFormatter
+	if formatter == nil {
+		formatter = DefaultResponseFormatter
+	}
+	return c.JSON(response.Status, formatter(response))
 }
 
 // String writes a UTF-8 plain-text response.
@@ -42,10 +104,12 @@ func (c *Context) NoContent(status int) error {
 
 // Paginated writes a 200 JSON response containing data and pagination metadata.
 func (c *Context) Paginated(data any, page pagination.Pagination) error {
-	return c.JSON(stdhttp.StatusOK, struct {
-		Data any                 `json:"data"`
-		Meta pagination.Metadata `json:"meta"`
-	}{Data: data, Meta: page.Metadata()})
+	return c.writeResponse(Response{
+		Status:  stdhttp.StatusOK,
+		Success: true,
+		Data:    data,
+		Meta:    page.Metadata(),
+	})
 }
 
 type responseState struct {

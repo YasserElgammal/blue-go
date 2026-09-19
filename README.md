@@ -1,6 +1,8 @@
 # Blue
 
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![CI](https://github.com/YasserElgammal/blue-go/actions/workflows/ci.yml/badge.svg)](https://github.com/YasserElgammal/blue-go/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Blue is a lightweight Go web framework for building REST APIs.
 
@@ -80,7 +82,7 @@ func main() {
     app.Use(blue.Logger(), blue.Recover())
 
     app.GET("/health", func(c *blue.Context) error {
-        return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+        return c.Respond(http.StatusOK, map[string]string{"status": "ok"})
     })
 
     if err := app.Run(":8080"); err != nil {
@@ -111,7 +113,7 @@ handler:
 
 ```go
 func listUsers(c *blue.Context) error {
-    return c.JSON(http.StatusOK, []User{})
+    return c.Respond(http.StatusOK, []User{})
 }
 ```
 
@@ -129,7 +131,7 @@ app.GET("/users/:id", func(c *blue.Context) error {
     page := c.QueryInt("page", 1)
     filter := c.Query("filter")
 
-    return c.JSON(http.StatusOK, map[string]any{
+    return c.Respond(http.StatusOK, map[string]any{
         "id": id, "page": page, "filter": filter,
     })
 })
@@ -204,7 +206,7 @@ to records written by `Logger`:
 app.Use(blue.RequestID(), blue.Logger())
 
 app.GET("/request-id", func(c *blue.Context) error {
-    return c.JSON(http.StatusOK, map[string]string{
+    return c.Respond(http.StatusOK, map[string]string{
         "request_id": c.RequestID(),
     })
 })
@@ -265,13 +267,41 @@ Context response helpers return write or serialization errors for the central
 error handler:
 
 ```go
-return c.JSON(http.StatusOK, value)
+return c.Respond(http.StatusOK, value)
+return c.RespondWithMessage(http.StatusCreated, "User created", user)
+return c.JSON(http.StatusOK, value) // raw JSON without the unified envelope
 return c.String(http.StatusOK, "hello %s", name)
 return c.NoContent(http.StatusNoContent)
 ```
 
-JSON responses use `encoding/json` and the
-`application/json; charset=utf-8` content type.
+`Respond`, `RespondWithMessage`, `Paginated`, and framework errors use one
+response envelope. JSON responses use `encoding/json` and the
+`application/json; charset=utf-8` content type. A successful response is:
+
+```json
+{"success":true,"data":{"id":42}}
+```
+
+`JSON` remains available when an endpoint needs an unwrapped response.
+
+Customize the envelope once for an application with `SetResponseFormatter`.
+The formatter receives the HTTP status and all response fields:
+
+```go
+app.SetResponseFormatter(func(response blue.Response) any {
+    body := map[string]any{"ok": response.Success}
+    if response.Data != nil {
+        body["result"] = response.Data
+    }
+    if response.Error != nil {
+        body["problem"] = response.Error.Message
+    }
+    return body
+})
+```
+
+A middleware can call `c.SetResponseFormatter` to customize only the current
+request.
 
 ## Error handling
 
@@ -297,7 +327,7 @@ error status.
 By default, errors are returned as:
 
 ```json
-{"error":{"message":"User not found"}}
+{"success":false,"error":{"message":"User not found"}}
 ```
 
 Ordinary errors receive a generic 500 message so internal details are not
@@ -332,6 +362,7 @@ The response has a consistent shape:
 
 ```json
 {
+  "success": true,
   "data": [],
   "meta": {
     "current_page": 1,

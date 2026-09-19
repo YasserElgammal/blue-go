@@ -67,9 +67,7 @@ func DefaultErrorHandler(c *Context, err error) {
 			message = text
 		}
 	}
-	_ = c.JSON(status, map[string]any{
-		"error": map[string]string{"message": message},
-	})
+	_ = c.Error(status, message)
 }
 
 // StatusForError returns the response status represented by err.

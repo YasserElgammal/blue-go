@@ -9,9 +9,10 @@ type Context struct {
 	Request  *stdhttp.Request
 	Response stdhttp.ResponseWriter
 
-	params    map[string]string
-	requestID string
-	state     *responseState
+	params            map[string]string
+	requestID         string
+	state             *responseState
+	responseFormatter ResponseFormatter
 }
 
 // NewContext constructs a context for an incoming request.
@@ -20,7 +21,13 @@ func NewContext(w stdhttp.ResponseWriter, r *stdhttp.Request, params map[string]
 	if !ok {
 		state = &responseState{ResponseWriter: w}
 	}
-	return &Context{Request: r, Response: state, params: params, state: state}
+	return &Context{
+		Request:           r,
+		Response:          state,
+		params:            params,
+		state:             state,
+		responseFormatter: DefaultResponseFormatter,
+	}
 }
 
 // Param returns a named path parameter, or an empty string when it is absent.
@@ -42,3 +49,12 @@ func (c *Context) Status() int { return c.state.status }
 
 // Committed reports whether response headers have been written.
 func (c *Context) Committed() bool { return c.state.committed }
+
+// SetResponseFormatter changes how unified responses are represented for this
+// request. Applications normally configure this once with App.SetResponseFormatter.
+func (c *Context) SetResponseFormatter(formatter ResponseFormatter) {
+	if formatter == nil {
+		panic("blue: nil response formatter")
+	}
+	c.responseFormatter = formatter
+}

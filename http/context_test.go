@@ -39,6 +39,35 @@ func TestJSONResponse(t *testing.T) {
 	}
 }
 
+func TestUnifiedResponse(t *testing.T) {
+	c, response := context(stdhttp.MethodGet, "/", nil)
+	if err := c.RespondWithMessage(stdhttp.StatusCreated, "User created", map[string]int{"id": 42}); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != stdhttp.StatusCreated {
+		t.Fatalf("status = %d, want %d", response.Code, stdhttp.StatusCreated)
+	}
+	if response.Body.String() != "{\"success\":true,\"message\":\"User created\",\"data\":{\"id\":42}}\n" {
+		t.Fatalf("body = %q", response.Body.String())
+	}
+}
+
+func TestContextResponseFormatter(t *testing.T) {
+	c, response := context(stdhttp.MethodGet, "/", nil)
+	c.SetResponseFormatter(func(value bluehttp.Response) any {
+		return map[string]any{
+			"code":    value.Status,
+			"payload": value.Data,
+		}
+	})
+	if err := c.Respond(stdhttp.StatusAccepted, "queued"); err != nil {
+		t.Fatal(err)
+	}
+	if response.Body.String() != "{\"code\":202,\"payload\":\"queued\"}\n" {
+		t.Fatalf("body = %q", response.Body.String())
+	}
+}
+
 func TestStringAndNoContentResponses(t *testing.T) {
 	stringContext, stringResponse := context(stdhttp.MethodGet, "/", nil)
 	if err := stringContext.String(stdhttp.StatusOK, "hello %s", "blue"); err != nil {
@@ -77,13 +106,14 @@ func TestPaginatedResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	var body struct {
-		Data []string            `json:"data"`
-		Meta pagination.Metadata `json:"meta"`
+		Success bool                `json:"success"`
+		Data    []string            `json:"data"`
+		Meta    pagination.Metadata `json:"meta"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Data) != 2 || body.Meta.LastPage != 8 || body.Meta.CurrentPage != 2 {
+	if !body.Success || len(body.Data) != 2 || body.Meta.LastPage != 8 || body.Meta.CurrentPage != 2 {
 		t.Fatalf("unexpected pagination response: %#v", body)
 	}
 }
@@ -92,14 +122,14 @@ func TestDefaultErrorHandler(t *testing.T) {
 	t.Run("HTTP error", func(t *testing.T) {
 		c, response := context(stdhttp.MethodGet, "/", nil)
 		bluehttp.DefaultErrorHandler(c, bluehttp.NotFound("User not found"))
-		if response.Code != stdhttp.StatusNotFound || response.Body.String() != "{\"error\":{\"message\":\"User not found\"}}\n" {
+		if response.Code != stdhttp.StatusNotFound || response.Body.String() != "{\"success\":false,\"error\":{\"message\":\"User not found\"}}\n" {
 			t.Fatalf("unexpected response: %d %q", response.Code, response.Body.String())
 		}
 	})
 	t.Run("ordinary error", func(t *testing.T) {
 		c, response := context(stdhttp.MethodGet, "/", nil)
 		bluehttp.DefaultErrorHandler(c, errors.New("secret"))
-		if response.Code != stdhttp.StatusInternalServerError || response.Body.String() != "{\"error\":{\"message\":\"Internal Server Error\"}}\n" {
+		if response.Code != stdhttp.StatusInternalServerError || response.Body.String() != "{\"success\":false,\"error\":{\"message\":\"Internal Server Error\"}}\n" {
 			t.Fatalf("unexpected response: %d %q", response.Code, response.Body.String())
 		}
 	})

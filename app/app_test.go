@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -108,6 +109,57 @@ func TestErrorHandling(t *testing.T) {
 	})
 }
 
+func TestCustomResponseFormatter(t *testing.T) {
+	application := app.New()
+	application.SetResponseFormatter(func(response bluehttp.Response) any {
+		body := map[string]any{"ok": response.Success}
+		if response.Data != nil {
+			body["result"] = response.Data
+		}
+		if response.Error != nil {
+			body["problem"] = response.Error.Message
+		}
+		return body
+	})
+	application.GET("/success", func(c *bluehttp.Context) error {
+		return c.Respond(http.StatusOK, map[string]int{"id": 7})
+	})
+	application.GET("/failure", func(*bluehttp.Context) error {
+		return bluehttp.BadRequest("Invalid request")
+	})
+
+	success := request(t, application, http.MethodGet, "/success")
+	if success.Body.String() != "{\"ok\":true,\"result\":{\"id\":7}}\n" {
+		t.Fatalf("success body = %q", success.Body.String())
+	}
+	failure := request(t, application, http.MethodGet, "/failure")
+	if failure.Code != http.StatusBadRequest || failure.Body.String() != "{\"ok\":false,\"problem\":\"Invalid request\"}\n" {
+		t.Fatalf("failure status %d body %q", failure.Code, failure.Body.String())
+	}
+}
+
+func TestJSONConfigAppliedToRequests(t *testing.T) {
+	application := app.New()
+	config := bluehttp.DefaultJSONConfig()
+	config.DisallowUnknownFields = true
+	application.SetJSONConfig(config)
+	application.POST("/users", func(c *bluehttp.Context) error {
+		var input struct {
+			Name string `json:"name"`
+		}
+		return c.BindJSON(&input)
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/users", bytes.NewBufferString(`{"name":"Blue","extra":true}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	application.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	assertErrorMessage(t, response, "Request body contains an unknown field")
+}
+
 func TestNotFound(t *testing.T) {
 	response := request(t, app.New(), http.MethodGet, "/missing")
 	if response.Code != http.StatusNotFound {
@@ -133,7 +185,8 @@ func TestMethodNotAllowed(t *testing.T) {
 func assertErrorMessage(t *testing.T, response *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	var body struct {
-		Error struct {
+		Success bool `json:"success"`
+		Error   struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
@@ -142,5 +195,8 @@ func assertErrorMessage(t *testing.T, response *httptest.ResponseRecorder, want 
 	}
 	if body.Error.Message != want {
 		t.Fatalf("message = %q, want %q", body.Error.Message, want)
+	}
+	if body.Success {
+		t.Fatal("error response reported success")
 	}
 }

@@ -41,8 +41,19 @@ func NotFound(message string) *HTTPError {
 func MethodNotAllowed(message string) *HTTPError {
 	return NewHTTPError(stdhttp.StatusMethodNotAllowed, message)
 }
+func PayloadTooLarge(message string) *HTTPError {
+	return NewHTTPError(stdhttp.StatusRequestEntityTooLarge, message)
+}
+func UnsupportedMediaType(message string) *HTTPError {
+	return NewHTTPError(stdhttp.StatusUnsupportedMediaType, message)
+}
 func InternalServerError(message string) *HTTPError {
 	return NewHTTPError(stdhttp.StatusInternalServerError, message)
+}
+
+func withCause(httpError *HTTPError, cause error) *HTTPError {
+	httpError.Cause = cause
+	return httpError
 }
 
 // ErrorHandler writes an error returned by a handler.
@@ -67,9 +78,7 @@ func DefaultErrorHandler(c *Context, err error) {
 			message = text
 		}
 	}
-	_ = c.JSON(status, map[string]any{
-		"error": map[string]string{"message": message},
-	})
+	_ = c.Error(status, message)
 }
 
 // StatusForError returns the response status represented by err.

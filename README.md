@@ -1,10 +1,15 @@
 # Blue
 
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![CI](https://github.com/YasserElgammal/blue-go/actions/workflows/ci.yml/badge.svg)](https://github.com/YasserElgammal/blue-go/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Blue is a lightweight Go web framework for building REST APIs.
 
-It provides routing, route groups, request binding, response helpers, centralized error handling, pagination, graceful shutdown, and ready-to-use middleware for logging, panic recovery, CORS, and request IDs.
+It provides routing, route groups, safe request binding, response helpers,
+centralized error handling, pagination, configurable server limits, graceful
+shutdown, and ready-to-use middleware for logging, panic recovery, body limits,
+CORS, and request IDs.
 
 Blue favors explicit code, the Go standard library, and a focused public API. It stays independent of application architecture and persistence choices, allowing you to use any database driver, ORM, validation library, or project structure.
 
@@ -20,8 +25,10 @@ package remains the convenient application-facing API:
 blue-go/
 |-- app/
 |   |-- app.go                # application and HTTP server
+|   |-- server_config.go      # HTTP server timeouts and header limits
 |   |-- handler.go            # application-facing handler aliases
-|   `-- app_test.go
+|   |-- app_test.go
+|   `-- server_config_test.go
 |-- router/
 |   |-- router.go             # registration and matching
 |   |-- route.go              # route parsing and parameters
@@ -29,6 +36,7 @@ blue-go/
 |   `-- router_test.go
 |-- middleware/
 |   |-- middleware.go         # middleware type alias
+|   |-- body_limit.go         # request body size limit
 |   |-- logger.go             # structured request logging
 |   |-- cors.go               # CORS headers and preflight requests
 |   |-- request_id.go         # request ID generation and propagation
@@ -77,10 +85,10 @@ import (
 func main() {
     app := blue.New()
 
-    app.Use(blue.Logger(), blue.Recover())
+    app.Use(blue.BodyLimit(1 << 20), blue.Logger(), blue.Recover())
 
     app.GET("/health", func(c *blue.Context) error {
-        return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+        return c.Respond(http.StatusOK, map[string]string{"status": "ok"})
     })
 
     if err := app.Run(":8080"); err != nil {
@@ -111,7 +119,7 @@ handler:
 
 ```go
 func listUsers(c *blue.Context) error {
-    return c.JSON(http.StatusOK, []User{})
+    return c.Respond(http.StatusOK, []User{})
 }
 ```
 
@@ -129,7 +137,7 @@ app.GET("/users/:id", func(c *blue.Context) error {
     page := c.QueryInt("page", 1)
     filter := c.Query("filter")
 
-    return c.JSON(http.StatusOK, map[string]any{
+    return c.Respond(http.StatusOK, map[string]any{
         "id": id, "page": page, "filter": filter,
     })
 })
@@ -142,9 +150,24 @@ Decode a JSON request body with `Bind` or `BindJSON`:
 ```go
 var input CreateUserInput
 if err := c.Bind(&input); err != nil {
-    return blue.BadRequest("Invalid JSON body")
+    return err
 }
 ```
+
+JSON binding requires an `application/json` content type by default. Media
+types with a structured JSON suffix, such as `application/problem+json`, are
+also accepted. Enable strict field checking for the whole application with:
+
+```go
+jsonConfig := blue.DefaultJSONConfig()
+jsonConfig.DisallowUnknownFields = true
+app.SetJSONConfig(jsonConfig)
+```
+
+Malformed JSON, empty bodies, values with the wrong type, unknown fields, and
+unsupported content types produce safe client-facing `HTTPError` values. The
+original decoding error remains available through `errors.Is`/`errors.As` and
+is not included in the response.
 
 The underlying `*http.Request` and `http.ResponseWriter` remain available as
 `c.Request` and `c.Response`.
@@ -194,6 +217,20 @@ Middleware executes in the order passed to `Use`; its code after `next` runs in
 reverse order. Blue includes optional structured request logging via
 `log/slog`, request IDs, CORS, and panic recovery middleware.
 
+### Request body limits
+
+`BodyLimit` prevents handlers from reading more than the configured number of
+request-body bytes. Requests with a known oversized `Content-Length` are
+rejected before the handler runs; streamed bodies are limited while they are
+read:
+
+```go
+app.Use(blue.BodyLimit(1 << 20)) // 1 MiB
+```
+
+When `Bind` or `BindJSON` reaches the limit, Blue returns a safe `413 Request
+Entity Too Large` error through the centralized error handler.
+
 ### Request IDs
 
 `RequestID` preserves a valid incoming `X-Request-ID` or generates a random
@@ -204,7 +241,7 @@ to records written by `Logger`:
 app.Use(blue.RequestID(), blue.Logger())
 
 app.GET("/request-id", func(c *blue.Context) error {
-    return c.JSON(http.StatusOK, map[string]string{
+    return c.Respond(http.StatusOK, map[string]string{
         "request_id": c.RequestID(),
     })
 })
@@ -231,6 +268,21 @@ Place `RequestID` before `CORS` when preflight responses should also receive a
 request ID.
 
 ## Server lifecycle
+
+Servers created by `Run` and `Start` use bounded header, read, write, and idle
+timeouts. Copy the defaults and change only the values needed by the
+application:
+
+```go
+serverConfig := blue.DefaultServerConfig()
+serverConfig.WriteTimeout = 45 * time.Second
+serverConfig.MaxHeaderBytes = 512 << 10
+app.SetServerConfig(serverConfig)
+```
+
+`ServerConfig` exposes `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`,
+`IdleTimeout`, and `MaxHeaderBytes`. A zero timeout disables that timeout; a
+zero header limit uses the `net/http` default.
 
 `Run` and `Start` both block while the server is running. `Shutdown` can be
 called from another goroutine to wait for active requests to finish:
@@ -265,13 +317,41 @@ Context response helpers return write or serialization errors for the central
 error handler:
 
 ```go
-return c.JSON(http.StatusOK, value)
+return c.Respond(http.StatusOK, value)
+return c.RespondWithMessage(http.StatusCreated, "User created", user)
+return c.JSON(http.StatusOK, value) // raw JSON without the unified envelope
 return c.String(http.StatusOK, "hello %s", name)
 return c.NoContent(http.StatusNoContent)
 ```
 
-JSON responses use `encoding/json` and the
-`application/json; charset=utf-8` content type.
+`Respond`, `RespondWithMessage`, `Paginated`, and framework errors use one
+response envelope. JSON responses use `encoding/json` and the
+`application/json; charset=utf-8` content type. A successful response is:
+
+```json
+{"success":true,"data":{"id":42}}
+```
+
+`JSON` remains available when an endpoint needs an unwrapped response.
+
+Customize the envelope once for an application with `SetResponseFormatter`.
+The formatter receives the HTTP status and all response fields:
+
+```go
+app.SetResponseFormatter(func(response blue.Response) any {
+    body := map[string]any{"ok": response.Success}
+    if response.Data != nil {
+        body["result"] = response.Data
+    }
+    if response.Error != nil {
+        body["problem"] = response.Error.Message
+    }
+    return body
+})
+```
+
+A middleware can call `c.SetResponseFormatter` to customize only the current
+request.
 
 ## Error handling
 
@@ -297,7 +377,7 @@ error status.
 By default, errors are returned as:
 
 ```json
-{"error":{"message":"User not found"}}
+{"success":false,"error":{"message":"User not found"}}
 ```
 
 Ordinary errors receive a generic 500 message so internal details are not
@@ -332,6 +412,7 @@ The response has a consistent shape:
 
 ```json
 {
+  "success": true,
   "data": [],
   "meta": {
     "current_page": 1,

@@ -7,3 +7,4 @@ import bluehttp "github.com/yasserelgammal/blue-go/http"
 type HandlerFunc = bluehttp.HandlerFunc
 type Middleware = bluehttp.Middleware
 type ErrorHandler = bluehttp.ErrorHandler
+type ResponseFormatter = bluehttp.ResponseFormatter

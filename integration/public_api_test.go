@@ -46,3 +46,42 @@ func TestPublicMiddlewareAPI(t *testing.T) {
 		t.Fatal("X-Request-ID is empty")
 	}
 }
+
+
+func TestPublicPriority2Middleware(t *testing.T) {
+	application := blue.New()
+	application.Use(
+		blue.ETag(),
+		blue.RateLimit(blue.RateLimitConfig{MaxRequests: 5}),
+		blue.Logger(),
+	)
+
+	application.GET("/items/*path", func(c *blue.Context) error {
+		return c.String(http.StatusOK, "path: "+c.Param("path"))
+	})
+
+	// Test wildcard + ETag
+	req := httptest.NewRequest(http.MethodGet, "/items/docs/intro.md", nil)
+	rec := httptest.NewRecorder()
+	application.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d", rec.Code)
+	}
+	if rec.Body.String() != "path: docs/intro.md" {
+		t.Fatalf("unexpected body: %q", rec.Body.String())
+	}
+	etag := rec.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header")
+	}
+
+	// Test 304 with If-None-Match
+	req2 := httptest.NewRequest(http.MethodGet, "/items/docs/intro.md", nil)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+	application.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusNotModified {
+		t.Fatalf("expected 304, got %d", rec2.Code)
+	}
+}

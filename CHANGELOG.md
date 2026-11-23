@@ -2,6 +2,31 @@
 
 All notable changes to Blue are documented in this file.
 
+## [2.1.0] - 2026-11-23
+
+### Added
+
+- Wildcard route segments (`*name`) for greedy catch-all matching. A wildcard
+  segment must be the last segment in the path and captures all remaining
+  path parts joined with `/` into `c.Param("name")`.
+  Example: `app.GET("/files/*path", handler)` matches `/files/docs/api/v1.md`
+  and sets `path` to `"docs/api/v1.md"`.
+- Wildcard routes always lose to static and `:param` routes with the same
+  prefix, preserving existing precedence rules.
+- `RateLimit(RateLimitConfig)` middleware: fixed-window in-memory rate limiter
+  with a configurable `KeyFunc` (defaults to `RemoteAddr`). Returns 429 when
+  the limit is exceeded.
+- `Timeout(time.Duration)` middleware: cancels the request context after the
+  given duration and returns 503 Service Unavailable.
+- `ETag()` middleware: computes a weak SHA-256 ETag for GET/HEAD responses and
+  handles `If-None-Match` → 304 Not Modified automatically.
+- `LoggerWith(LoggerConfig)` middleware: accepts a custom `*slog.Logger` and a
+  `LevelForStatus` function to control the log level per response status.
+  `Logger()` is unchanged and continues to use `slog.Default()` with
+  Info/Error level selection.
+- `DefaultLevelForStatus(status int) slog.Level` helper: Info below 500,
+  Error for 5xx.
+
 ## [2.0.0] - 2026-09-20
 
 ### Added

@@ -56,6 +56,11 @@ func (r *Router) register(method, path string, handler HandlerFunc, group *Group
 
 // MatchRequest returns the best route match and all methods registered for the
 // path. The methods are used to distinguish 404 from 405 responses.
+//
+// Priority (highest to lowest):
+//  1. Static routes (most static segments win).
+//  2. Parameterised routes (:param).
+//  3. Wildcard routes (*name) — always lose to static/param matches.
 func (r *Router) MatchRequest(method, path string) (*Match, []string) {
 	r.mu.RLock()
 	routes := append([]*route(nil), r.routes...)
@@ -65,6 +70,7 @@ func (r *Router) MatchRequest(method, path string) (*Match, []string) {
 	var selectedParams map[string]string
 	bestStatic := -1
 	allowed := make(map[string]struct{})
+
 	for _, candidate := range routes {
 		params, matches := candidate.match(path)
 		if !matches {
@@ -75,10 +81,27 @@ func (r *Router) MatchRequest(method, path string) (*Match, []string) {
 			continue
 		}
 		score := staticCount(candidate.segments)
-		if selected == nil || score > bestStatic || (score == bestStatic && candidate.order < selected.order) {
+		// Wildcard routes lose to any non-wildcard match.
+		betterThanSelected := func() bool {
+			if selected == nil {
+				return true
+			}
+			// Prefer non-wildcard over wildcard.
+			if selected.isWildcard() && !candidate.isWildcard() {
+				return true
+			}
+			if !selected.isWildcard() && candidate.isWildcard() {
+				return false
+			}
+			// Same wildcard status: prefer higher static-segment count,
+			// then registration order.
+			return score > bestStatic || (score == bestStatic && candidate.order < selected.order)
+		}
+		if betterThanSelected() {
 			selected, selectedParams, bestStatic = candidate, params, score
 		}
 	}
+
 	methods := make([]string, 0, len(allowed))
 	for allowedMethod := range allowed {
 		methods = append(methods, allowedMethod)

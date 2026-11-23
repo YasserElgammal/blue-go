@@ -62,6 +62,77 @@ func TestStaticRouteTakesPrecedence(t *testing.T) {
 	}
 }
 
+func TestWildcardRouteMatching(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/files/*path", taggedHandler("wildcard"))
+
+	tests := []struct {
+		requestPath  string
+		wantMatch    bool
+		wantWildcard string
+	}{
+		{"/files/readme.txt", true, "readme.txt"},
+		{"/files/docs/api/v1.md", true, "docs/api/v1.md"},
+		{"/files/", true, ""},
+		{"/other", false, ""},
+	}
+	for _, tt := range tests {
+		matched, _ := r.MatchRequest(http.MethodGet, tt.requestPath)
+		if tt.wantMatch && matched == nil {
+			t.Fatalf("path %q: expected match, got none", tt.requestPath)
+		}
+		if !tt.wantMatch && matched != nil {
+			t.Fatalf("path %q: expected no match, got one", tt.requestPath)
+		}
+		if tt.wantMatch && matched.Params["path"] != tt.wantWildcard {
+			t.Fatalf("path %q: wildcard param = %q, want %q", tt.requestPath, matched.Params["path"], tt.wantWildcard)
+		}
+	}
+}
+
+func TestWildcardLosesToStaticAndParam(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/files/*path", taggedHandler("wildcard"))
+	r.Register(http.MethodGet, "/files/:name", taggedHandler("param"))
+	r.Register(http.MethodGet, "/files/readme", taggedHandler("static"))
+
+	if matched, _ := r.MatchRequest(http.MethodGet, "/files/readme"); matched == nil || matched.Handler(nil).Error() != "static" {
+		t.Fatal("static route should beat wildcard")
+	}
+	if matched, _ := r.MatchRequest(http.MethodGet, "/files/something"); matched == nil || matched.Handler(nil).Error() != "param" {
+		t.Fatal(":param route should beat wildcard")
+	}
+	if matched, _ := r.MatchRequest(http.MethodGet, "/files/a/b/c"); matched == nil || matched.Handler(nil).Error() != "wildcard" {
+		t.Fatal("multi-segment path should match wildcard")
+	}
+}
+
+func TestWildcardWithParamPrefix(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/users/:id/files/*path", taggedHandler("user-files"))
+
+	matched, _ := r.MatchRequest(http.MethodGet, "/users/42/files/docs/readme.txt")
+	if matched == nil {
+		t.Fatal("expected match")
+	}
+	if matched.Params["id"] != "42" {
+		t.Fatalf("id = %q, want %q", matched.Params["id"], "42")
+	}
+	if matched.Params["path"] != "docs/readme.txt" {
+		t.Fatalf("path = %q, want %q", matched.Params["path"], "docs/readme.txt")
+	}
+}
+
+func TestWildcardPanicsWhenNotLast(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for mid-route wildcard")
+		}
+	}()
+	r := router.New()
+	r.Register(http.MethodGet, "/files/*path/extra", taggedHandler("bad"))
+}
+
 func TestNestedRouteGroups(t *testing.T) {
 	r := router.New()
 	api := r.Group("/api/v1")

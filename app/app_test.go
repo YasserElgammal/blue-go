@@ -182,6 +182,30 @@ func TestMethodNotAllowed(t *testing.T) {
 	assertErrorMessage(t, response, "Method Not Allowed")
 }
 
+func TestWildcardRoute(t *testing.T) {
+	application := app.New()
+	application.GET("/static/*filepath", func(c *bluehttp.Context) error {
+		return c.String(http.StatusOK, c.Param("filepath"))
+	})
+	application.GET("/static/robots.txt", func(c *bluehttp.Context) error {
+		return c.String(http.StatusOK, "robots")
+	})
+
+	t.Run("captures multi-segment path", func(t *testing.T) {
+		response := request(t, application, http.MethodGet, "/static/css/main.css")
+		if response.Code != http.StatusOK || response.Body.String() != "css/main.css" {
+			t.Fatalf("got status %d body %q", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("static route beats wildcard", func(t *testing.T) {
+		response := request(t, application, http.MethodGet, "/static/robots.txt")
+		if response.Code != http.StatusOK || response.Body.String() != "robots" {
+			t.Fatalf("static route did not win: status %d body %q", response.Code, response.Body.String())
+		}
+	})
+}
+
 func assertErrorMessage(t *testing.T, response *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	var body struct {

@@ -6,10 +6,10 @@
 
 Blue is a lightweight Go web framework for building REST APIs.
 
-It provides routing, route groups, safe request binding, response helpers,
+It provides routing, route groups, wildcard routes, safe request binding, response helpers,
 centralized error handling, pagination, configurable server limits, graceful
 shutdown, and ready-to-use middleware for logging, panic recovery, body limits,
-CORS, and request IDs.
+CORS, request IDs, rate limiting, request timeouts, and ETags.
 
 Blue favors explicit code, the Go standard library, and a focused public API. It stays independent of application architecture and persistence choices, allowing you to use any database driver, ORM, validation library, or project structure.
 
@@ -37,10 +37,13 @@ blue-go/
 |-- middleware/
 |   |-- middleware.go         # middleware type alias
 |   |-- body_limit.go         # request body size limit
-|   |-- logger.go             # structured request logging
 |   |-- cors.go               # CORS headers and preflight requests
-|   |-- request_id.go         # request ID generation and propagation
+|   |-- etag.go               # ETag and conditional request handling
+|   |-- logger.go             # structured request logging
+|   |-- rate_limit.go         # in-memory rate limiting
 |   |-- recover.go            # panic recovery
+|   |-- request_id.go         # request ID generation and propagation
+|   |-- timeout.go            # request deadline cancellation
 |   `-- middleware_test.go
 |-- http/
 |   |-- context.go            # request context
@@ -124,8 +127,11 @@ func listUsers(c *blue.Context) error {
 ```
 
 Invalid, duplicate, or ambiguous route declarations panic during registration,
-so configuration mistakes fail early. Static routes take precedence over
-parameter routes.
+so configuration mistakes fail early. Route precedence follows a strict, predictable hierarchy:
+
+1. **Static routes** (e.g. `/users/me`) take highest precedence.
+2. **Parameter routes** (e.g. `/users/:id`) match any single segment.
+3. **Wildcard routes** (e.g. `/files/*filepath`) match remaining segments and always lose to static and parameter matches.
 
 ## Path and query parameters
 
@@ -144,6 +150,21 @@ app.GET("/users/:id", func(c *blue.Context) error {
 ```
 
 `QueryInt` returns its fallback when the value is missing or is not an integer.
+
+### Wildcard (catch-all) routes
+
+A wildcard begins with `*` and must be the last segment in a route pattern. It captures all remaining path segments joined with `/`:
+
+```go
+app.GET("/files/*filepath", func(c *blue.Context) error {
+    filepath := c.Param("filepath")
+    return c.String(http.StatusOK, "Requested file: %s", filepath)
+})
+```
+
+For a request to `/files/docs/api/v1.md`, `c.Param("filepath")` returns `"docs/api/v1.md"`.
+
+### Request binding
 
 Decode a JSON request body with `Bind` or `BindJSON`:
 
@@ -214,8 +235,8 @@ api.GET("/profile", profile)
 ```
 
 Middleware executes in the order passed to `Use`; its code after `next` runs in
-reverse order. Blue includes optional structured request logging via
-`log/slog`, request IDs, CORS, and panic recovery middleware.
+reverse order. Blue includes ready-to-use middleware for structured logging,
+panic recovery, body limits, CORS, request IDs, rate limiting, request timeouts, and ETags.
 
 ### Request body limits
 
@@ -267,6 +288,62 @@ credentials and uses the common REST methods and JSON request headers.
 Place `RequestID` before `CORS` when preflight responses should also receive a
 request ID.
 
+### Rate limiting
+
+`RateLimit` restricts requests per key using an in-memory fixed-window counter:
+
+```go
+app.Use(blue.RateLimit(blue.RateLimitConfig{
+    MaxRequests: 100,
+    Window:      time.Minute,
+    KeyFunc: func(c *blue.Context) string {
+        return c.Request.Header.Get("X-API-Key")
+    },
+}))
+```
+
+When `KeyFunc` is omitted, it defaults to the client IP (`c.Request.RemoteAddr`).
+When the limit is exceeded, Blue returns a `429 Too Many Requests` error.
+
+### Request timeout
+
+`Timeout` cancels the request context after a given deadline and returns `503 Service Unavailable`:
+
+```go
+app.Use(blue.Timeout(10 * time.Second))
+```
+
+Handlers that inspect `c.Request.Context().Done()` can abort expensive operations early when the deadline expires.
+
+### ETag & conditional requests
+
+`ETag` computes a weak SHA-256 ETag for successful `GET` and `HEAD` responses and
+automatically responds with `304 Not Modified` (and no body) when the client sends a matching
+`If-None-Match` header:
+
+```go
+app.Use(blue.ETag())
+```
+
+### Structured logging customization
+
+`Logger` logs one structured record for each request using `slog.Default()`.
+To use a custom `*slog.Logger` or custom status-to-level mapping, use `LoggerWith`:
+
+```go
+app.Use(blue.LoggerWith(blue.LoggerConfig{
+    Logger: myLogger,
+    LevelForStatus: func(status int) slog.Level {
+        if status >= 500 {
+            return slog.LevelError
+        }
+        return slog.LevelInfo
+    },
+}))
+```
+
+`DefaultLevelForStatus` is also provided as a ready-to-use helper (returns `slog.LevelError` for 5xx and `slog.LevelInfo` for all other statuses).
+
 ## Server lifecycle
 
 Servers created by `Run` and `Start` use bounded header, read, write, and idle
@@ -288,21 +365,15 @@ zero header limit uses the `net/http` default.
 called from another goroutine to wait for active requests to finish:
 
 ```go
-go func() {
-    if err := app.Start(":8080"); err != nil {
-        log.Printf("server stopped: %v", err)
-    }
-}()
-
-// Later, after receiving your application's shutdown signal:
-shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 defer cancel()
-if err := app.Shutdown(shutdownCtx); err != nil {
-    log.Printf("shutdown failed: %v", err)
+
+if err := app.Shutdown(ctx); err != nil {
+    log.Printf("server shutdown error: %v", err)
 }
 ```
 
-For the common case, `RunWithGracefulShutdown` handles `Ctrl+C` and `SIGTERM`
+`RunWithGracefulShutdown` listens for `os.Interrupt` and `SIGTERM`
 and gives active requests up to ten seconds to complete:
 
 ```go
@@ -460,10 +531,11 @@ Tests are colocated with the package they cover:
 - `app/app_test.go` covers HTTP methods, middleware composition, centralized
   errors, 404 responses, and 405 responses.
 - `router/router_test.go` covers registration, matching, path parameters,
-  static-route precedence, and nested groups.
+  wildcard routes, route precedence, and nested groups.
 - `http/context_test.go` covers query parsing, body binding, responses, and
   default error rendering.
-- `middleware/middleware_test.go` covers panic recovery.
+- `middleware/middleware_test.go` covers panic recovery, request IDs, body limits,
+  CORS, rate limiting, request timeouts, ETags, and structured logging.
 - `pagination/pagination_test.go` covers metadata calculation and value
   normalization.
 - `integration/public_api_test.go` verifies the public `blue` package as an

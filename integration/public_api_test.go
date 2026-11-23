@@ -47,7 +47,6 @@ func TestPublicMiddlewareAPI(t *testing.T) {
 	}
 }
 
-
 func TestPublicPriority2Middleware(t *testing.T) {
 	application := blue.New()
 	application.Use(

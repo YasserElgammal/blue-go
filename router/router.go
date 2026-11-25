@@ -50,7 +50,7 @@ func (r *Router) register(method, path string, handler HandlerFunc, group *Group
 	}
 	r.routes = append(r.routes, &route{
 		method: method, segments: segments, handler: handler,
-		group: group, order: len(r.routes),
+		group: group,
 	})
 }
 
@@ -58,21 +58,21 @@ func (r *Router) register(method, path string, handler HandlerFunc, group *Group
 // path. The methods are used to distinguish 404 from 405 responses.
 //
 // Priority (highest to lowest):
-//  1. Static routes (most static segments win).
+//  1. Static segments, compared from left to right.
 //  2. Parameterised routes (:param).
 //  3. Wildcard routes (*name) — always lose to static/param matches.
 func (r *Router) MatchRequest(method, path string) (*Match, []string) {
 	r.mu.RLock()
 	routes := append([]*route(nil), r.routes...)
 	r.mu.RUnlock()
+	parts := splitPath(cleanRequestPath(path))
 
 	var selected *route
 	var selectedParams map[string]string
-	bestStatic := -1
 	allowed := make(map[string]struct{})
 
 	for _, candidate := range routes {
-		params, matches := candidate.match(path)
+		params, matches := candidate.match(parts)
 		if !matches {
 			continue
 		}
@@ -80,25 +80,8 @@ func (r *Router) MatchRequest(method, path string) (*Match, []string) {
 		if candidate.method != method {
 			continue
 		}
-		score := staticCount(candidate.segments)
-		// Wildcard routes lose to any non-wildcard match.
-		betterThanSelected := func() bool {
-			if selected == nil {
-				return true
-			}
-			// Prefer non-wildcard over wildcard.
-			if selected.isWildcard() && !candidate.isWildcard() {
-				return true
-			}
-			if !selected.isWildcard() && candidate.isWildcard() {
-				return false
-			}
-			// Same wildcard status: prefer higher static-segment count,
-			// then registration order.
-			return score > bestStatic || (score == bestStatic && candidate.order < selected.order)
-		}
-		if betterThanSelected() {
-			selected, selectedParams, bestStatic = candidate, params, score
+		if selected == nil || moreSpecific(candidate.segments, selected.segments) {
+			selected, selectedParams = candidate, params
 		}
 	}
 

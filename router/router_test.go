@@ -62,6 +62,51 @@ func TestStaticRouteTakesPrecedence(t *testing.T) {
 	}
 }
 
+func TestSpecificityIsComparedFromLeftToRight(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/:section/settings", taggedHandler("later-static"))
+	r.Register(http.MethodGet, "/users/:action", taggedHandler("earlier-static"))
+
+	matched, _ := r.MatchRequest(http.MethodGet, "/users/settings")
+	if matched == nil || matched.Handler(nil).Error() != "earlier-static" {
+		t.Fatal("the route with the earlier static segment should take precedence")
+	}
+}
+
+func TestAllTrailingSlashesAreIgnored(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/users///", taggedHandler("users"))
+
+	for _, path := range []string{"/users", "/users/", "/users///"} {
+		matched, _ := r.MatchRequest(http.MethodGet, path)
+		if matched == nil || matched.Handler(nil).Error() != "users" {
+			t.Fatalf("path %q did not match the normalized route", path)
+		}
+	}
+}
+
+func TestRepeatedInternalSlashesRemainSignificant(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/users/:id", taggedHandler("normal"))
+	r.Register(http.MethodGet, "/users//:id", taggedHandler("repeated"))
+
+	matched, _ := r.MatchRequest(http.MethodGet, "/users//42")
+	if matched == nil || matched.Handler(nil).Error() != "repeated" {
+		t.Fatal("repeated internal slash should remain a distinct path segment")
+	}
+}
+
+func TestRepeatedLeadingSlashesRemainSignificant(t *testing.T) {
+	r := router.New()
+	r.Register(http.MethodGet, "/users", taggedHandler("normal"))
+	r.Register(http.MethodGet, "//users", taggedHandler("repeated"))
+
+	matched, _ := r.MatchRequest(http.MethodGet, "//users")
+	if matched == nil || matched.Handler(nil).Error() != "repeated" {
+		t.Fatal("repeated leading slash should remain a distinct path segment")
+	}
+}
+
 func TestWildcardRouteMatching(t *testing.T) {
 	r := router.New()
 	r.Register(http.MethodGet, "/files/*path", taggedHandler("wildcard"))

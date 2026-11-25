@@ -2,6 +2,17 @@
 
 All notable changes to Blue are documented in this file.
 
+## [2.2.0] - 2026-11-25
+
+### Changed
+
+- Compare route specificity from left to right across segments (static, then
+  parameter, then wildcard) instead of by total static segment count.
+- Trim all trailing slashes during route and request path normalization while
+  keeping repeated leading and internal slashes significant.
+- Split request paths once per `MatchRequest` call rather than per candidate
+  route.
+
 ## [2.1.0] - 2026-11-23
 
 ### Added
@@ -26,6 +37,13 @@ All notable changes to Blue are documented in this file.
   Info/Error level selection.
 - `DefaultLevelForStatus(status int) slog.Level` helper: Info below 500,
   Error for 5xx.
+
+## [2.0.1] - 2026-09-20
+
+### Fixed
+
+- Update Go module path and internal/documentation imports to
+  `github.com/yasserelgammal/blue-go/v2`.
 
 ## [2.0.0] - 2026-09-20
 

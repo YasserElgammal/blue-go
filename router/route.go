@@ -7,7 +7,6 @@ type route struct {
 	segments []segment
 	handler  HandlerFunc
 	group    *Group
-	order    int
 }
 
 type segment struct {
@@ -65,31 +64,32 @@ func cleanPath(path string) string {
 	if strings.ContainsAny(path, "?#") {
 		panic("blue: route path cannot contain a query or fragment")
 	}
-	if len(path) > 1 {
-		path = strings.TrimSuffix(path, "/")
-	}
-	return path
+	return trimTrailingSlashes(path)
 }
 
 func splitPath(path string) []string {
 	if path == "/" {
 		return nil
 	}
-	return strings.Split(strings.Trim(path, "/"), "/")
+	return strings.Split(strings.TrimPrefix(path, "/"), "/")
 }
 
 func cleanRequestPath(path string) string {
 	if path == "" {
 		return "/"
 	}
-	if len(path) > 1 {
-		path = strings.TrimSuffix(path, "/")
+	return trimTrailingSlashes(path)
+}
+
+func trimTrailingSlashes(path string) string {
+	path = strings.TrimRight(path, "/")
+	if path == "" {
+		return "/"
 	}
 	return path
 }
 
-func (r *route) match(path string) (map[string]string, bool) {
-	parts := splitPath(cleanRequestPath(path))
+func (r *route) match(parts []string) (map[string]string, bool) {
 
 	// Wildcard route: the last segment greedily captures everything from its
 	// position onward, joined with "/".
@@ -139,11 +139,6 @@ func (r *route) match(path string) (map[string]string, bool) {
 	return params, true
 }
 
-// isWildcard reports whether the route ends in a catch-all wildcard segment.
-func (r *route) isWildcard() bool {
-	return len(r.segments) > 0 && r.segments[len(r.segments)-1].wildcard
-}
-
 func sameShape(a, b []segment) bool {
 	aWild := len(a) > 0 && a[len(a)-1].wildcard
 	bWild := len(b) > 0 && b[len(b)-1].wildcard
@@ -167,12 +162,26 @@ func sameShape(a, b []segment) bool {
 	return true
 }
 
-func staticCount(segments []segment) int {
-	count := 0
-	for _, item := range segments {
-		if !item.param && !item.wildcard {
-			count++
+// moreSpecific reports whether a should take precedence over b. Segment
+// specificity is compared from left to right: static, parameter, wildcard.
+func moreSpecific(a, b []segment) bool {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		aScore := segmentSpecificity(a[i])
+		bScore := segmentSpecificity(b[i])
+		if aScore != bScore {
+			return aScore > bScore
 		}
 	}
-	return count
+	return false
+}
+
+func segmentSpecificity(item segment) int {
+	switch {
+	case item.wildcard:
+		return 0
+	case item.param:
+		return 1
+	default:
+		return 2
+	}
 }
